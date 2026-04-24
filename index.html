@@ -1,4 +1,4 @@
-<!-- FleetTrack v2026-04-24 22:14:29 -->
+<!-- FleetTrack v2026-04-24 22:21:34 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1273,12 +1273,58 @@ function renderReports(mode){
   }
 
   if(mode==='by-repair'){
-    const desc={};
-    rlist.forEach(r=>{const k=r.description.trim().toLowerCase();if(!desc[k])desc[k]={name:r.description,count:0,total:0};desc[k].count++;desc[k].total+=(parseFloat(r.cost)||0);});
-    const sorted=Object.values(desc).sort((a,b)=>b.total-a.total);
-    el.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Repair / Service</th><th>Count</th><th>Total Cost</th><th>Avg Cost</th></tr></thead><tbody>
-      ${sorted.map(d=>`<tr><td>${d.name}</td><td>${d.count}</td><td><strong>$${d.total.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</strong></td><td>$${(d.total/d.count).toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</td></tr>`).join('')}
-    </tbody></table></div>`;
+    var srch=(document.getElementById('repair-search')||{value:''}).value.toLowerCase().trim();
+    var sortBy=(document.getElementById('repair-sort')||{value:'total'}).value;
+    var dateFrom=(document.getElementById('repair-date-from')||{value:''}).value;
+    var dateTo=(document.getElementById('repair-date-to')||{value:''}).value;
+    var filtered=rlist.filter(function(r){
+      if(dateFrom&&r.date<dateFrom)return false;
+      if(dateTo&&r.date>dateTo)return false;
+      return true;
+    });
+    var desc={};
+    filtered.forEach(function(r){
+      var k=(r.description||'').trim().toLowerCase();
+      if(!k)return;
+      if(!desc[k])desc[k]={name:r.description,count:0,total:0,vehicles:{}};
+      desc[k].count++;desc[k].total+=(parseFloat(r.cost)||0);
+      desc[k].vehicles[r.vehicleId]=true;
+    });
+    var sorted=Object.values(desc).filter(function(d){return !srch||d.name.toLowerCase().indexOf(srch)!==-1;});
+    sorted.sort(function(a,b){
+      if(sortBy==='count')return b.count-a.count;
+      if(sortBy==='avg')return(b.total/b.count)-(a.total/a.count);
+      if(sortBy==='name')return a.name.localeCompare(b.name);
+      return b.total-a.total;
+    });
+    var grandTotal=sorted.reduce(function(s,d){return s+d.total;},0);
+    var fh='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:1rem">';
+    fh+='<input type="text" id="repair-search" placeholder="Search repair items..." value="'+srch+'" oninput="reRenderRepairs()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;min-width:220px">';
+    fh+='<select id="repair-sort" onchange="reRenderRepairs()" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:13px">';
+    fh+='<option value="total"'+(sortBy==='total'?' selected':'')+'>Sort: Total Cost</option>';
+    fh+='<option value="count"'+(sortBy==='count'?' selected':'')+'>Sort: Most Frequent</option>';
+    fh+='<option value="avg"'+(sortBy==='avg'?' selected':'')+'>Sort: Highest Avg</option>';
+    fh+='<option value="name"'+(sortBy==='name'?' selected':'')+'>Sort: A–Z</option>';
+    fh+='</select>';
+    fh+='<input type="date" id="repair-date-from" value="'+dateFrom+'" onchange="reRenderRepairs()" style="padding:6px 8px;border:1px solid var(--border);border-radius:var(--r);font-size:13px">';
+    fh+='<span style="font-size:12px;color:var(--muted)">to</span>';
+    fh+='<input type="date" id="repair-date-to" value="'+dateTo+'" onchange="reRenderRepairs()" style="padding:6px 8px;border:1px solid var(--border);border-radius:var(--r);font-size:13px">';
+    fh+='<button onclick="clearRepairFilters()" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;cursor:pointer;background:var(--white)">Clear</button>';
+    fh+='<span style="margin-left:auto;font-size:13px;color:var(--muted)">'+sorted.length+' items • $'+grandTotal.toLocaleString('en-US',{maximumFractionDigits:0})+' total</span>';
+    fh+='</div>';
+    var th='<div class="table-wrap"><table><thead><tr><th>Repair / Service</th><th>Count</th><th>Vehicles</th><th>Total Cost</th><th>Avg Cost</th></tr></thead><tbody>';
+    if(!sorted.length){
+      th+='<tr><td colspan="5"><div class="empty-state">No repair items match your search.</div></td></tr>';
+    } else {
+      sorted.forEach(function(d){
+        th+='<tr><td><strong>'+d.name+'</strong></td><td>'+d.count+'</td>';
+        th+='<td style="font-size:12px;color:var(--muted)">'+Object.keys(d.vehicles).join(', ')+'</td>';
+        th+='<td><strong>$'+d.total.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})+'</strong></td>';
+        th+='<td>$'+(d.total/d.count).toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})+'</td></tr>';
+      });
+    }
+    th+='</tbody></table></div>';
+    el.innerHTML=fh+th;
   }
 
   if(mode==='by-cost'){
@@ -1397,6 +1443,15 @@ function renderRepairDetail(vid){
     h+='</tbody></table></div>';
   }
   el.innerHTML=h;
+}
+
+
+function reRenderRepairs(){renderReports('by-repair');}
+function clearRepairFilters(){
+  var f=document.getElementById('repair-search'); if(f)f.value='';
+  var d1=document.getElementById('repair-date-from'); if(d1)d1.value='';
+  var d2=document.getElementById('repair-date-to'); if(d2)d2.value='';
+  renderReports('by-repair');
 }
 
 function showReport(m){renderReports(m);}

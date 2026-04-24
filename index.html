@@ -1,4 +1,4 @@
-<!-- FleetTrack v2026-04-24 21:42:23 -->
+<!-- FleetTrack v2026-04-24 22:14:29 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1256,8 +1256,18 @@ function renderReports(mode){
     }).sort((a,b)=>b.spent-a.spent);
     const grand=rows.reduce((s,r)=>s+r.spent,0);
     const tcB={Truck:'badge-blue',Trailer:'badge-purple',Forklift:'badge-teal'};
-    el.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Vehicle</th><th>Type</th><th>Status</th><th>Records</th><th>Last Odometer</th><th>Maintenance</th><th>Fixed Asset</th><th>Total Spent</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td><strong>${r.v.id}</strong></td><td><span class="badge ${tcB[r.v.type]||'badge-gray'}">${r.v.type}</span></td><td><span class="badge ${r.v.status==='archived'?'badge-archived':'badge-green'}">${r.v.status}</span></td><td>${r.count}</td><td>${r.v.type!=='Trailer'&&r.odo&&r.odo.odometer>0?`<span class="odo-badge">${r.odo.odometer.toLocaleString()} mi</span>`:r.v.type==='Trailer'?'Date-based':'—'}</td><td>$${r.maint.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</td><td>$${r.fixed.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</td><td><strong>$${r.spent.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</strong></td></tr>`).join('')}
+
+    // Vehicle selector dropdown
+    var selHtml='<div style="display:flex;gap:8px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">';
+    selHtml+='<label style="font-size:13px;font-weight:600">Jump to vehicle:</label>';
+    selHtml+='<select onchange="if(this.value){setRepVehicle(this.value);this.value=\'\';}" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;min-width:200px">';
+    selHtml+='<option value="">Select a vehicle...</option>';
+    selHtml+=vlist.map(function(v){return '<option value="'+v.id+'">'+v.id+' — '+(v.year||'')+' '+(v.make||'')+' '+(v.model||'')+'</option>';}).join('');
+    selHtml+='</select>';
+    selHtml+='<span style="font-size:12px;color:var(--muted)">or click any row below</span>';
+    selHtml+='</div>';
+    el.innerHTML=selHtml+`<div class="table-wrap"><table><thead><tr><th>Vehicle</th><th>Type</th><th>Status</th><th>Records</th><th>Last Odometer</th><th>Maintenance</th><th>Fixed Asset</th><th>Total Spent</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr style="cursor:pointer" onclick="setRepVehicle('${r.v.id}')"><td><strong style="color:var(--blue)">${r.v.id}</strong></td><td><span class="badge ${tcB[r.v.type]||'badge-gray'}">${r.v.type}</span></td><td><span class="badge ${r.v.status==='archived'?'badge-archived':'badge-green'}">${r.v.status}</span></td><td>${r.count}</td><td>${r.v.type!=='Trailer'&&r.odo&&r.odo.odometer>0?`<span class="odo-badge">${r.odo.odometer.toLocaleString()} mi</span>`:r.v.type==='Trailer'?'Date-based':'—'}</td><td>$${r.maint.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</td><td>$${r.fixed.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</td><td><strong>$${r.spent.toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:2})}</strong></td></tr>`).join('')}
       <tr class="total-row"><td colspan="5">Grand Total</td><td></td><td></td><td>$${grand.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>
     </tbody></table></div>`;
   }
@@ -1349,6 +1359,44 @@ function exportReport(){
   a.href=url; a.download='FleetTrack_Report_'+new Date().toISOString().slice(0,10)+'.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+
+function setRepVehicle(vid){
+  renderRepairDetail(vid);
+}
+
+function renderRepairDetail(vid){
+  var el=document.getElementById('report-content');
+  if(!el) return;
+  var v=vehicles.find(function(x){return x.id===vid;});
+  if(!v){renderReports('by-vehicle');return;}
+  var vr=repairs.filter(function(r){return r.vehicleId===vid;}).sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+  var total=vr.reduce(function(s,r){return s+(parseFloat(r.cost)||0);},0);
+  var h='<div style="margin-bottom:1rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+  h+='<button class="btn" onclick="showReport(\'by-vehicle\')" style="font-size:12px">&#8592; All Vehicles</button>';
+  h+='<strong style="font-size:16px">'+vid+'</strong>';
+  h+='<span style="color:var(--muted);font-size:13px">'+(v.year||'')+' '+(v.make||'')+' '+(v.model||'')+'</span>';
+  h+='<span style="margin-left:auto;font-weight:700;font-size:15px">$'+total.toLocaleString('en-US',{maximumFractionDigits:0})+' total</span>';
+  h+='</div>';
+  if(!vr.length){
+    h+='<div class="empty-state">No repair records found for this vehicle.</div>';
+  } else {
+    h+='<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Status</th><th>Shop</th><th>Odometer</th><th>Cost</th></tr></thead><tbody>';
+    vr.forEach(function(r){
+      h+='<tr>';
+      h+='<td>'+fmtDate(r.date)+'</td>';
+      h+='<td>'+( r.description||'')+'</td>';
+      h+='<td><span class="badge badge-gray" style="font-size:11px">'+(r.reptype||'')+'</span></td>';
+      h+='<td><span class="badge '+(r.status==='Complete'?'badge-green':'badge-amber')+'" style="font-size:11px">'+(r.status||'')+'</span></td>';
+      h+='<td style="font-size:12px">'+(r.shop||'—')+'</td>';
+      h+='<td style="font-size:12px">'+(r.odometer>0?Number(r.odometer).toLocaleString()+' mi':'—')+'</td>';
+      h+='<td style="font-weight:600">'+fmtCost(parseFloat(r.cost)||0)+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  el.innerHTML=h;
 }
 
 function showReport(m){renderReports(m);}
